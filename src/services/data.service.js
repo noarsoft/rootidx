@@ -1,0 +1,192 @@
+// src/services/data.service.js
+// -----------------------------------------------------------------------------
+// Data service
+// -----------------------------------------------------------------------------
+
+const BaseVersionedRepository = require("../repositories/base-versioned.repository");
+const SchemaService = require("./schema.service");
+
+class DataService {
+  constructor(db) {
+    this.db = db;
+    this.repo = new BaseVersionedRepository(db, "data");
+    this.schemaService = new SchemaService(db);
+  }
+
+  async createData(input = {}) {
+    const dataSchemaId = input.data_schema_id;
+
+    if (!dataSchemaId) {
+      const err = new Error("data_schema_id is required");
+      err.code = "DATA_SCHEMA_ID_REQUIRED";
+      throw err;
+    }
+
+    const payload = input.payload || {};
+
+    const validation = await this.schemaService.validatePayloadBySchemaId(
+      dataSchemaId,
+      payload,
+      {
+        allowExtraFields: input.allowExtraFields === true,
+      }
+    );
+
+    if (!validation.ok) {
+      const err = new Error("Payload is invalid against schema");
+      err.code = "PAYLOAD_SCHEMA_INVALID";
+      err.errors = validation.errors;
+      throw err;
+    }
+
+    return this.repo.create({
+      rootid: input.rootid,
+      data_schema_id: Number(dataSchemaId),
+      payload,
+    });
+  }
+
+  async updateData(rootid, input = {}) {
+    const latest = await this.repo.getLatestOrThrow(rootid);
+
+    const dataSchemaId = input.data_schema_id || latest.data_schema_id;
+    const payload =
+      input.payload !== undefined
+        ? {
+          ...(latest.payload || {}),
+          ...(input.payload || {}),
+        }
+        : latest.payload || {};
+
+    const validation = await this.schemaService.validatePayloadBySchemaId(
+      dataSchemaId,
+      payload,
+      {
+        allowExtraFields: input.allowExtraFields === true,
+      }
+    );
+
+    if (!validation.ok) {
+      const err = new Error("Payload is invalid against schema");
+      err.code = "PAYLOAD_SCHEMA_INVALID";
+      err.errors = validation.errors;
+      throw err;
+    }
+
+    return this.repo.updateByRootId(rootid, {
+      data_schema_id: Number(dataSchemaId),
+      payload,
+    });
+  }
+
+  async getDataById(id) {
+    const data = await this.repo.findById(id);
+
+    if (!data) {
+      const err = new Error(`Data not found: ${id}`);
+      err.code = "DATA_NOT_FOUND";
+      throw err;
+    }
+
+    return data;
+  }
+
+  async getLatestDataByRootId(rootid, options = {}) {
+    const data = await this.repo.getLatestByRootId(rootid, options);
+
+    if (!data) {
+      const err = new Error(`Latest data not found: ${rootid}`);
+      err.code = "DATA_NOT_FOUND";
+      throw err;
+    }
+
+    return data;
+  }
+
+  async listLatestData(options = {}) {
+    if (options.data_schema_id) {
+      return this.listLatestDataBySchemaId(options.data_schema_id, options);
+    }
+
+    if (options.data_schema_rootid) {
+      return this.listLatestDataBySchemaRootId(options.data_schema_rootid, options);
+    }
+
+    return this.repo.listLatest(options);
+  }
+
+  async listLatestDataBySchemaId(schemaId, options = {}) {
+    return this.repo.listLatestBySchemaId(schemaId, options);
+  }
+
+  async listLatestDataBySchemaRootId(schemaRootId, options = {}) {
+    return this.repo.listLatestInSchemaFamily(schemaRootId, options);
+  }
+
+  async getDataHistory(rootid) {
+    return this.repo.getHistory(rootid);
+  }
+
+  async deleteData(rootid) {
+    return this.repo.softDeleteByRootId(rootid);
+  }
+
+  async restoreData(versionId) {
+    return this.repo.restoreVersion(versionId);
+  }
+
+  async compareDataWithLatestSchema(id) {
+    const data = await this.getDataById(id);
+    return this.schemaService.compareRowWithLatestSchema(data);
+  }
+
+  async migrateDataToLatestSchema(rootid, options = {}) {
+    const latestData = await this.getLatestDataByRootId(rootid, {
+      includeDeleted: false,
+    });
+
+    const mapped = await this.schemaService.mapPayloadToLatestSchema(
+      latestData.data_schema_id,
+      latestData.payload || {}
+    );
+
+    if (mapped.isLatest) {
+      return {
+        migrated: false,
+        reason: "DATA_ALREADY_USES_LATEST_SCHEMA",
+        data: latestData,
+        ...mapped,
+      };
+    }
+
+    const requiresReview = mapped.warnings.some(
+      (w) => w.status === "type_changed"
+    );
+
+    if (requiresReview && options.force !== true) {
+      const err = new Error("Data migration requires review");
+      err.code = "DATA_MIGRATION_REQUIRES_REVIEW";
+      err.details = {
+        warnings: mapped.warnings,
+        compare: mapped.compare,
+      };
+      throw err;
+    }
+
+    const newVersion = await this.repo.updateByRootId(rootid, {
+      data_schema_id: Number(mapped.latestSchema.id),
+      payload: mapped.payload,
+    });
+
+    return {
+      migrated: true,
+      data: newVersion,
+      oldSchema: mapped.oldSchema,
+      latestSchema: mapped.latestSchema,
+      warnings: mapped.warnings,
+      compare: mapped.compare,
+    };
+  }
+}
+
+module.exports = DataService;
