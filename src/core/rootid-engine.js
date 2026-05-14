@@ -24,6 +24,7 @@
 const crypto = require("node:crypto");
 
 const ALLOWED_TABLES = new Set([
+  "business",
   "data_schema",
   "data",
   "form",

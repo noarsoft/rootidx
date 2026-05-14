@@ -2,6 +2,7 @@
 
 const express = require("express");
 
+const createBusinessRoute = require("./business.route");
 const createSchemaRoute = require("./schema.route");
 const createDataRoute = require("./data.route");
 const createFormRoute = require("./form.route");
@@ -18,6 +19,7 @@ function createRoutes(db) {
     });
   });
 
+  router.use("/business", createBusinessRoute(db));
   router.use("/schema", createSchemaRoute(db));
   router.use("/data", createDataRoute(db));
   router.use("/form", createFormRoute(db));

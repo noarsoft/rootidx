@@ -560,6 +560,7 @@ class SchemaService {
       rootid: input.rootid,
       name,
       payload,
+      business_id: input.business_id ? Number(input.business_id) : null,
     });
   }
 
@@ -610,7 +611,20 @@ class SchemaService {
   }
 
   async listLatestSchemas(options = {}) {
-    return this.repo.listLatest(options);
+    const listOptions = {
+      includeDeleted: options.includeDeleted,
+      limit: options.limit,
+      offset: options.offset,
+    };
+
+    if (options.business_id) {
+      listOptions.columnFilters = {
+        ...(listOptions.columnFilters || {}),
+        business_id: Number(options.business_id),
+      };
+    }
+
+    return this.repo.listLatest(listOptions);
   }
 
   async getSchemaHistory(rootid) {

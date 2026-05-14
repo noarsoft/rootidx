@@ -27,6 +27,46 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 
 -- =====================================================
+-- business
+-- เก็บข้อมูลโครงการ/ธุรกิจ (tenant)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS business (
+  id BIGSERIAL PRIMARY KEY,
+
+  _rootid TEXT NOT NULL,
+  _prev_id BIGINT NULL REFERENCES business(id),
+  _doc_version INTEGER NOT NULL DEFAULT 1,
+  _flag TEXT NOT NULL DEFAULT '',
+
+  name TEXT NOT NULL,
+  icon TEXT NULL,
+
+  _modify_datetime BIGINT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYYMMDDHH24MISS')::BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT business_doc_version_positive
+    CHECK (_doc_version >= 1),
+
+  CONSTRAINT business_flag_allowed
+    CHECK (_flag IN ('', 'd'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_rootid
+  ON business (_rootid);
+
+CREATE INDEX IF NOT EXISTS idx_business_latest
+  ON business (_rootid, _doc_version DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_business_flag
+  ON business (_flag);
+
+CREATE INDEX IF NOT EXISTS idx_business_name
+  ON business (name);
+
+
+-- =====================================================
 -- data_schema
 -- เก็บ schema/config ของข้อมูล
 -- =====================================================
@@ -38,6 +78,8 @@ CREATE TABLE IF NOT EXISTS data_schema (
   _prev_id BIGINT NULL REFERENCES data_schema(id),
   _doc_version INTEGER NOT NULL DEFAULT 1,
   _flag TEXT NOT NULL DEFAULT '',
+
+  business_id BIGINT NULL REFERENCES business(id),
 
   name TEXT NOT NULL,
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -52,6 +94,9 @@ CREATE TABLE IF NOT EXISTS data_schema (
   CONSTRAINT data_schema_flag_allowed
     CHECK (_flag IN ('', 'd'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_data_schema_business_id
+  ON data_schema (business_id);
 
 CREATE INDEX IF NOT EXISTS idx_data_schema_rootid
   ON data_schema (_rootid);

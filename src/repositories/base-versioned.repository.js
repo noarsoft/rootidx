@@ -22,6 +22,7 @@ const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
 
 const ALLOWED_TABLES = new Set([
+  "business",
   "data_schema",
   "data",
   "form",
@@ -48,6 +49,7 @@ const COMMON_ALLOWED_COLUMN_FILTERS = new Set([
   "name",
   "data_schema_id",
   "data_schema_rootid",
+  "business_id",
 ]);
 
 function assertAllowedTable(table) {

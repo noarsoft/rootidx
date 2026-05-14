@@ -73,6 +73,7 @@ function createSchemaController(db) {
           includeDeleted: req.query.includeDeleted === "true",
           limit: req.query.limit,
           offset: req.query.offset,
+          business_id: req.query.business_id,
         });
 
         return res.json({
