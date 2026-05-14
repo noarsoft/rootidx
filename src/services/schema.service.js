@@ -54,6 +54,7 @@ const WARNING_TEXT = {
 };
 
 const ALLOWED_FIELD_TYPES = new Set([
+  // storage types
   "string",
   "number",
   "integer",
@@ -69,6 +70,50 @@ const ALLOWED_FIELD_TYPES = new Set([
   "object",
   "array",
   "json",
+
+  // control types (used by frontend as UI hints)
+  "password",
+  "email",
+  "select",
+  "toggle",
+  "datepicker",
+  "slider",
+  "rating",
+  "file",
+  "searchbox",
+  "multipleupload",
+  "pagebreak",
+  "label",
+  "link",
+  "image",
+  "badge",
+  "icon",
+  "progress",
+  "qrcode",
+  "calendar",
+  "calendargrid",
+  "button",
+  "buttongroup",
+  "accordion",
+  "tab",
+  "card",
+  "tree",
+  "menu",
+  "gridview",
+  "tableview",
+  "form",
+  "crud",
+  "modal",
+  "pagination",
+  "chart",
+  "barchart",
+  "linechart",
+  "piechart",
+  "doughnutchart",
+  "radarchart",
+  "areachart",
+  "bubblechart",
+  "mixedchart",
 ]);
 
 function isPlainObject(value) {
@@ -248,6 +293,63 @@ function isValueTypeValid(value, type) {
       return Array.isArray(value);
 
     case "json":
+      return true;
+
+    // control types that store string values
+    case "password":
+    case "email":
+    case "searchbox":
+    case "file":
+    case "multipleupload":
+    case "label":
+    case "link":
+    case "image":
+    case "badge":
+    case "icon":
+    case "qrcode":
+    case "button":
+    case "datepicker":
+    case "calendar":
+    case "calendargrid":
+      return typeof value === "string";
+
+    // control types that store number values
+    case "slider":
+    case "rating":
+    case "progress":
+      return typeof value === "number" && Number.isFinite(value);
+
+    // control types that store boolean values
+    case "toggle":
+      return typeof value === "boolean";
+
+    // control types that store string (selected option)
+    case "select":
+    case "buttongroup":
+      return typeof value === "string" || typeof value === "number";
+
+    // layout/composite controls — accept any JSON
+    case "pagebreak":
+    case "accordion":
+    case "tab":
+    case "card":
+    case "tree":
+    case "menu":
+    case "gridview":
+    case "tableview":
+    case "form":
+    case "crud":
+    case "modal":
+    case "pagination":
+    case "chart":
+    case "barchart":
+    case "linechart":
+    case "piechart":
+    case "doughnutchart":
+    case "radarchart":
+    case "areachart":
+    case "bubblechart":
+    case "mixedchart":
       return true;
 
     default:
