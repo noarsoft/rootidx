@@ -28,6 +28,11 @@ function createApp() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+  app.use((req, res, next) => {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    next();
+  });
+
   app.get("/", (req, res) => {
     res.json({
       ok: true,

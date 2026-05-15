@@ -24,9 +24,10 @@ const pool = new Pool({
     : false,
 });
 
-pool.on("connect", () => {
+pool.on("connect", (client) => {
+  client.query("SET client_encoding TO 'UTF8'");
   if (config.app.env !== "test") {
-    console.log("[db] PostgreSQL connected");
+    console.log("[db] PostgreSQL connected (UTF-8)");
   }
 });
 
