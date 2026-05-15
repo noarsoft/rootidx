@@ -551,7 +551,10 @@ function validatePayloadAgainstSchema(payload, schemaPayload, options = {}) {
     }
 
     if (Array.isArray(fieldConfig.enum) && value != null) {
-      if (!fieldConfig.enum.includes(value)) {
+      const enumMatch = fieldConfig.enum.some(e =>
+        e === value || (e && typeof e === 'object' && e.value === value)
+      );
+      if (!enumMatch) {
         errors.push({
           code: "INVALID_ENUM_VALUE",
           field: fieldName,
