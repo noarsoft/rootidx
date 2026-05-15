@@ -72,16 +72,13 @@ const ALLOWED_FIELD_TYPES = new Set([
   "json",
 
   // control types (used by frontend as UI hints)
-  "password",
-  "email",
   "select",
+  "dropdown",
   "toggle",
   "datepicker",
   "slider",
   "rating",
-  "file",
-  "searchbox",
-  "multipleupload",
+  "fileupload",
   "pagebreak",
   "label",
   "link",
@@ -90,30 +87,31 @@ const ALLOWED_FIELD_TYPES = new Set([
   "icon",
   "progress",
   "qrcode",
-  "calendar",
   "calendargrid",
   "button",
   "buttongroup",
-  "accordion",
-  "tab",
+  "form",
+  "table",
+  "grid",
   "card",
+  "accordion",
+  "tabs",
   "tree",
   "menu",
-  "gridview",
-  "tableview",
-  "form",
   "crud",
   "modal",
   "pagination",
+  "alertmodal",
+  "confirmmodal",
   "chart",
-  "barchart",
-  "linechart",
-  "piechart",
-  "doughnutchart",
-  "radarchart",
-  "areachart",
-  "bubblechart",
-  "mixedchart",
+  "chartsbar",
+  "chartsline",
+  "chartspie",
+  "chartsdoughnut",
+  "chartsradar",
+  "chartsarea",
+  "chartsbubble",
+  "chartsmixed",
 ]);
 
 function isPlainObject(value) {
@@ -325,31 +323,39 @@ function isValueTypeValid(value, type) {
 
     // control types that store string (selected option)
     case "select":
+    case "dropdown":
     case "buttongroup":
       return typeof value === "string" || typeof value === "number";
+
+    // control types that store boolean values
+    case "checkbox":
+      return typeof value === "boolean";
 
     // layout/composite controls — accept any JSON
     case "pagebreak":
     case "accordion":
-    case "tab":
+    case "tabs":
     case "card":
     case "tree":
     case "menu":
-    case "gridview":
-    case "tableview":
+    case "grid":
+    case "table":
     case "form":
     case "crud":
     case "modal":
     case "pagination":
+    case "alertmodal":
+    case "confirmmodal":
     case "chart":
-    case "barchart":
-    case "linechart":
-    case "piechart":
-    case "doughnutchart":
-    case "radarchart":
-    case "areachart":
-    case "bubblechart":
-    case "mixedchart":
+    case "chartsbar":
+    case "chartsline":
+    case "chartspie":
+    case "chartsdoughnut":
+    case "chartsradar":
+    case "chartsarea":
+    case "chartsbubble":
+    case "chartsmixed":
+    case "fileupload":
       return true;
 
     default:
