@@ -173,6 +173,8 @@ class DataService {
       throw err;
     }
 
+    await this.repo.updateFlag(latestData.id, "u");
+
     const newVersion = await this.repo.updateByRootId(rootid, {
       data_schema_id: Number(mapped.latestSchema.id),
       payload: mapped.payload,

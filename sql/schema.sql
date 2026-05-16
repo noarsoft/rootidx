@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS data (
     CHECK (_doc_version >= 1),
 
   CONSTRAINT data_flag_allowed
-    CHECK (_flag IN ('', 'd')),
+    CHECK (_flag IN ('', 'd', 'u')),
 
   CONSTRAINT data_transfer_version_non_negative
     CHECK (_transfer_version >= 0)

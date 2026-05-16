@@ -102,7 +102,7 @@ tableview
 | `_rootid` | `TEXT NOT NULL` | object family id |
 | `_prev_id` | `BIGINT NULL` | version ก่อนหน้า |
 | `_doc_version` | `INTEGER NOT NULL DEFAULT 1` | version number |
-| `_flag` | `TEXT NOT NULL DEFAULT ''` | `''` ปกติ, `'d'` deleted |
+| `_flag` | `TEXT NOT NULL DEFAULT ''` | `''` ปกติ, `'d'` deleted, `'u'` updated (ถูก migrate schema) |
 | `payload` | `JSONB NOT NULL DEFAULT '{}'` | เนื้อหาหลัก |
 | `_modify_datetime` | `BIGINT` | เวลาแก้ไขแบบ `YYYYMMDDHHMMSS` |
 | `created_at` | `TIMESTAMPTZ` | เวลาสร้าง |

@@ -481,6 +481,16 @@ class BaseVersionedRepository {
     return rootidEngine.restoreVersion(this.db, this.table, versionId);
   }
 
+  async updateFlag(id, flag) {
+    if (!id) {
+      const err = new Error("id is required");
+      err.code = "ID_REQUIRED";
+      throw err;
+    }
+
+    return rootidEngine.updateFlag(this.db, this.table, id, flag);
+  }
+
   async isDeleted(rootid) {
     if (!rootid) {
       const err = new Error("_rootid is required");

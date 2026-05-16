@@ -45,6 +45,7 @@ const SYSTEM_FIELDS = new Set([
 
 const FLAG_NORMAL = "";
 const FLAG_DELETED = "d";
+const FLAG_UPDATED = "u";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -99,13 +100,30 @@ function tableIdent(table) {
 function normalizeFlag(flag) {
   if (flag == null) return FLAG_NORMAL;
 
-  if (flag !== FLAG_NORMAL && flag !== FLAG_DELETED) {
+  if (flag !== FLAG_NORMAL && flag !== FLAG_DELETED && flag !== FLAG_UPDATED) {
     const err = new Error(`Invalid _flag: ${flag}`);
     err.code = "INVALID_FLAG";
     throw err;
   }
 
   return flag;
+}
+
+async function updateFlag(db, table, id, flag) {
+  assertAllowedTable(table);
+
+  const normalized = normalizeFlag(flag);
+
+  return queryOne(
+    db,
+    `
+      UPDATE ${tableIdent(table)}
+      SET _flag = $1
+      WHERE id = $2
+      RETURNING *
+    `,
+    [normalized, id]
+  );
 }
 
 function assertPlainObject(value, label = "value") {
@@ -439,6 +457,7 @@ async function getLatestSchemaFromSchemaId(db, dataSchemaId, options = {}) {
 module.exports = {
   FLAG_NORMAL,
   FLAG_DELETED,
+  FLAG_UPDATED,
 
   SYSTEM_FIELDS,
   ALLOWED_TABLES,
@@ -458,6 +477,7 @@ module.exports = {
   softDeleteByRootId,
   restoreVersion,
   isDeleted,
+  updateFlag,
 
   getLatestSchemaByRootId,
   getSchemaRootIdBySchemaId,
