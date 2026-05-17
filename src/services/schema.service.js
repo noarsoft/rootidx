@@ -654,6 +654,47 @@ class SchemaService {
   constructor(db) {
     this.db = db;
     this.repo = new BaseVersionedRepository(db, "data_schema");
+    this.dataRepo = new BaseVersionedRepository(db, "data");
+  }
+
+  async markLatestDataBySchemaIdAsUpdated(dataSchemaId) {
+    if (!dataSchemaId) {
+      return {
+        matched: 0,
+        marked: 0,
+      };
+    }
+
+    const rows = await this.db.query(
+      `
+        WITH latest AS (
+          SELECT DISTINCT ON (_rootid) *
+          FROM data
+          WHERE data_schema_id = $1
+          ORDER BY _rootid, _doc_version DESC, id DESC
+        )
+        SELECT _rootid, _flag
+        FROM latest
+        WHERE _flag <> 'd'
+      `,
+      [Number(dataSchemaId)]
+    );
+
+    let marked = 0;
+
+    for (const row of rows.rows || []) {
+      if (row._flag === "u") {
+        continue;
+      }
+
+      await this.dataRepo.updateByRootId(row._rootid, {}, { flag: "u" });
+      marked += 1;
+    }
+
+    return {
+      matched: rows.rowCount || 0,
+      marked,
+    };
   }
 
   async createSchema(input = {}) {
@@ -677,6 +718,9 @@ class SchemaService {
 
   async updateSchema(rootid, input = {}) {
     const patch = {};
+    const currentSchema = await this.repo.getLatestOrThrow(rootid, {
+      includeDeleted: true,
+    });
 
     if (input.name !== undefined) {
       const name = String(input.name || "").trim();
@@ -694,7 +738,15 @@ class SchemaService {
       patch.payload = normalizeSchemaPayload(input.payload);
     }
 
-    return this.repo.updateByRootId(rootid, patch);
+    const updatedSchema = await this.repo.updateByRootId(rootid, patch, {
+      flag: "u",
+    });
+
+    if (input.payload !== undefined) {
+      await this.markLatestDataBySchemaIdAsUpdated(currentSchema.id);
+    }
+
+    return updatedSchema;
   }
 
   async getSchemaById(id) {

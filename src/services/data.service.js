@@ -79,6 +79,74 @@ class DataService {
     });
   }
 
+  async saveDataAsLatestSchemaVersion(rootid, input = {}, options = {}) {
+    const latest = await this.repo.getLatestOrThrow(rootid);
+
+    const sourcePayload =
+      input.payload !== undefined
+        ? {
+          ...(latest.payload || {}),
+          ...(input.payload || {}),
+        }
+        : latest.payload || {};
+
+    const sourceValidation = await this.schemaService.validatePayloadBySchemaId(
+      latest.data_schema_id,
+      sourcePayload,
+      {
+        allowExtraFields: input.allowExtraFields === true,
+      }
+    );
+
+    if (!sourceValidation.ok) {
+      const err = new Error("Payload is invalid against source schema");
+      err.code = "PAYLOAD_SCHEMA_INVALID";
+      err.errors = sourceValidation.errors;
+      throw err;
+    }
+
+    const mapped = await this.schemaService.mapPayloadToLatestSchema(
+      latest.data_schema_id,
+      sourcePayload
+    );
+
+    const requiresReview = mapped.warnings.some(
+      (warning) => warning.status === "type_changed"
+    );
+
+    if (requiresReview && options.force !== true) {
+      const err = new Error("Data migration requires review");
+      err.code = "DATA_MIGRATION_REQUIRES_REVIEW";
+      err.details = {
+        warnings: mapped.warnings,
+        compare: mapped.compare,
+      };
+      throw err;
+    }
+
+    if (!mapped.isLatest) {
+      const targetValidation = await this.schemaService.validatePayloadBySchemaId(
+        mapped.latestSchema.id,
+        mapped.payload,
+        {
+          allowExtraFields: false,
+        }
+      );
+
+      if (!targetValidation.ok) {
+        const err = new Error("Mapped payload is invalid against latest schema");
+        err.code = "PAYLOAD_SCHEMA_INVALID";
+        err.errors = targetValidation.errors;
+        throw err;
+      }
+    }
+
+    return this.repo.updateByRootId(rootid, {
+      data_schema_id: Number(mapped.latestSchema.id),
+      payload: mapped.payload,
+    });
+  }
+
   async getDataById(id) {
     const data = await this.repo.findById(id);
 

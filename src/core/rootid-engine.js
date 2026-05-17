@@ -100,7 +100,7 @@ function tableIdent(table) {
 function normalizeFlag(flag) {
   if (flag == null) return FLAG_NORMAL;
 
-  if (flag !== FLAG_NORMAL && flag !== FLAG_DELETED && flag !== FLAG_UPDATED) {
+  if (flag !== FLAG_NORMAL && flag !== FLAG_UPDATED && flag !== FLAG_DELETED) {
     const err = new Error(`Invalid _flag: ${flag}`);
     err.code = "INVALID_FLAG";
     throw err;

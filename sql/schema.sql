@@ -92,8 +92,15 @@ CREATE TABLE IF NOT EXISTS data_schema (
     CHECK (_doc_version >= 1),
 
   CONSTRAINT data_schema_flag_allowed
-    CHECK (_flag IN ('', 'd'))
+    CHECK (_flag IN ('', 'u', 'd'))
 );
+
+ALTER TABLE data_schema
+  DROP CONSTRAINT IF EXISTS data_schema_flag_allowed;
+
+ALTER TABLE data_schema
+  ADD CONSTRAINT data_schema_flag_allowed
+  CHECK (_flag IN ('', 'u', 'd'));
 
 CREATE INDEX IF NOT EXISTS idx_data_schema_business_id
   ON data_schema (business_id);
@@ -153,7 +160,7 @@ CREATE TABLE IF NOT EXISTS data (
     CHECK (_doc_version >= 1),
 
   CONSTRAINT data_flag_allowed
-    CHECK (_flag IN ('', 'd', 'u')),
+    CHECK (_flag IN ('', 'u', 'd')),
 
   CONSTRAINT data_transfer_version_non_negative
     CHECK (_transfer_version >= 0)
@@ -182,6 +189,13 @@ CREATE INDEX IF NOT EXISTS idx_data_transfer_pending
 
 CREATE INDEX IF NOT EXISTS idx_data_payload_gin
   ON data USING GIN (payload);
+
+ALTER TABLE data
+  DROP CONSTRAINT IF EXISTS data_flag_allowed;
+
+ALTER TABLE data
+  ADD CONSTRAINT data_flag_allowed
+  CHECK (_flag IN ('', 'u', 'd'));
 
 
 -- =====================================================
