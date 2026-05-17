@@ -665,7 +665,7 @@ class SchemaService {
       };
     }
 
-    const rows = await this.db.query(
+    const result = await this.db.query(
       `
         WITH latest AS (
           SELECT DISTINCT ON (_rootid) *
@@ -680,20 +680,32 @@ class SchemaService {
       [Number(dataSchemaId)]
     );
 
-    let marked = 0;
+    const rowsToMark = (result.rows || []).filter(r => r._flag !== "u");
 
-    for (const row of rows.rows || []) {
-      if (row._flag === "u") {
-        continue;
+    if (rowsToMark.length === 0) {
+      return { matched: result.rowCount || 0, marked: 0 };
+    }
+
+    const client = await this.db.connect();
+    try {
+      await client.query("BEGIN");
+      const txRepo = new BaseVersionedRepository(client, "data");
+
+      for (const row of rowsToMark) {
+        await txRepo.updateByRootId(row._rootid, {}, { flag: "u" });
       }
 
-      await this.dataRepo.updateByRootId(row._rootid, {}, { flag: "u" });
-      marked += 1;
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
 
     return {
-      matched: rows.rowCount || 0,
-      marked,
+      matched: result.rowCount || 0,
+      marked: rowsToMark.length,
     };
   }
 
@@ -738,9 +750,7 @@ class SchemaService {
       patch.payload = normalizeSchemaPayload(input.payload);
     }
 
-    const updatedSchema = await this.repo.updateByRootId(rootid, patch, {
-      flag: "u",
-    });
+    const updatedSchema = await this.repo.updateByRootId(rootid, patch);
 
     if (input.payload !== undefined) {
       await this.markLatestDataBySchemaIdAsUpdated(currentSchema.id);

@@ -299,6 +299,12 @@ class FormService {
   async getFormEditorContext(id) {
     const form = await this.getFormById(id);
 
+    if (!form.data_schema_id && !form.data_schema_rootid) {
+      const err = new Error("Form has no schema binding (both data_schema_id and data_schema_rootid are null)");
+      err.code = "FORM_NO_SCHEMA_BINDING";
+      throw err;
+    }
+
     if (!form.data_schema_id) {
       return {
         form,

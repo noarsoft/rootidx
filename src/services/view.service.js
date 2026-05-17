@@ -306,6 +306,12 @@ class ViewService {
   async getViewEditorContext(id) {
     const view = await this.getViewById(id);
 
+    if (!view.data_schema_id && !view.data_schema_rootid) {
+      const err = new Error("View has no schema binding (both data_schema_id and data_schema_rootid are null)");
+      err.code = "VIEW_NO_SCHEMA_BINDING";
+      throw err;
+    }
+
     if (!view.data_schema_id) {
       return {
         view,

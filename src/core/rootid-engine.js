@@ -109,23 +109,6 @@ function normalizeFlag(flag) {
   return flag;
 }
 
-async function updateFlag(db, table, id, flag) {
-  assertAllowedTable(table);
-
-  const normalized = normalizeFlag(flag);
-
-  return queryOne(
-    db,
-    `
-      UPDATE ${tableIdent(table)}
-      SET _flag = $1
-      WHERE id = $2
-      RETURNING *
-    `,
-    [normalized, id]
-  );
-}
-
 function assertPlainObject(value, label = "value") {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     const err = new Error(`${label} must be a plain object`);
@@ -477,7 +460,6 @@ module.exports = {
   softDeleteByRootId,
   restoreVersion,
   isDeleted,
-  updateFlag,
 
   getLatestSchemaByRootId,
   getSchemaRootIdBySchemaId,
