@@ -203,6 +203,23 @@ function createDataController(db) {
         return next(err);
       }
     },
+
+    async saveAsLatestSchemaVersion(req, res, next) {
+      try {
+        const { rootid } = req.params;
+
+        const result = await dataService.saveDataAsLatestSchemaVersion(rootid, req.body, {
+          force: req.body.force === true,
+        });
+
+        return res.json({
+          ok: true,
+          data: result,
+        });
+      } catch (err) {
+        return next(err);
+      }
+    },
   };
 }
 

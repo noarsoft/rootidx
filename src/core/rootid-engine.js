@@ -44,6 +44,7 @@ const SYSTEM_FIELDS = new Set([
 ]);
 
 const FLAG_NORMAL = "";
+const FLAG_UPDATED = "u";
 const FLAG_DELETED = "d";
 
 function pad2(n) {
@@ -99,7 +100,7 @@ function tableIdent(table) {
 function normalizeFlag(flag) {
   if (flag == null) return FLAG_NORMAL;
 
-  if (flag !== FLAG_NORMAL && flag !== FLAG_DELETED) {
+  if (flag !== FLAG_NORMAL && flag !== FLAG_UPDATED && flag !== FLAG_DELETED) {
     const err = new Error(`Invalid _flag: ${flag}`);
     err.code = "INVALID_FLAG";
     throw err;
@@ -438,6 +439,7 @@ async function getLatestSchemaFromSchemaId(db, dataSchemaId, options = {}) {
 
 module.exports = {
   FLAG_NORMAL,
+  FLAG_UPDATED,
   FLAG_DELETED,
 
   SYSTEM_FIELDS,

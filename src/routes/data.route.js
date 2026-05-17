@@ -19,6 +19,7 @@ function createDataRoute(db) {
   router.get("/root/:rootid/latest", controller.getLatestByRootId);
   router.get("/root/:rootid/history", controller.getHistory);
   router.patch("/root/:rootid", controller.updateByRootId);
+  router.post("/root/:rootid/save-latest-schema-version", controller.saveAsLatestSchemaVersion);
   router.delete("/root/:rootid", controller.deleteByRootId);
 
   // migrate latest data row to latest schema

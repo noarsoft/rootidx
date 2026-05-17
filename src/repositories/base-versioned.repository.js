@@ -251,7 +251,7 @@ class BaseVersionedRepository {
     return rootidEngine.createRoot(this.db, this.table, clean);
   }
 
-  async updateByRootId(rootid, patch = {}) {
+  async updateByRootId(rootid, patch = {}, options = {}) {
     if (!rootid) {
       const err = new Error("_rootid is required");
       err.code = "ROOTID_REQUIRED";
@@ -267,7 +267,8 @@ class BaseVersionedRepository {
       this.db,
       this.table,
       rootid,
-      cleanPatch
+      cleanPatch,
+      options
     );
   }
 
