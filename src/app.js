@@ -5,6 +5,8 @@
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const config = require("./config/config");
 const pool = require("./db/pool");
@@ -18,12 +20,25 @@ function createApp() {
 
   app.disable("x-powered-by");
 
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }));
+
   app.use(
     cors({
       origin: config.app.corsOrigin === "*" ? true : config.app.corsOrigin,
       credentials: true,
     })
   );
+
+  const mutationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: config.app.env === "production" ? 60 : 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: "Too many requests, please try again later" },
+  });
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -42,7 +57,12 @@ function createApp() {
     });
   });
 
-  app.use("/api", createRoutes(pool));
+  app.use("/api", (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+      return mutationLimiter(req, res, next);
+    }
+    next();
+  }, createRoutes(pool));
 
   app.use(notFound);
   app.use(errorHandler);
