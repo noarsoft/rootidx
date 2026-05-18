@@ -26,6 +26,7 @@ function createDataRoute(db) {
   router.post("/root/:rootid/migrate-latest-schema", controller.migrateToLatestSchema);
 
   // fixed version row
+  router.get("/:id/edit-context", controller.getEditContext);
   router.get("/:id", controller.getById);
   router.get("/:id/compare-latest-schema", controller.compareWithLatestSchema);
   router.post("/:id/restore", controller.restoreVersion);

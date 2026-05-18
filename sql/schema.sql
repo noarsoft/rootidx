@@ -4,15 +4,18 @@
 -- หลักการ:
 -- - ทุก table เป็น Root-ID versioned object
 -- - ไม่มี _is_active
--- - current/latest = ORDER BY _doc_version DESC, id DESC
--- - deleted = latest row มี _flag = 'd'
--- - restore = copy old version เป็น new version
+-- - ไม่มี _doc_version
+-- - current/latest = row ที่ _flag = ''
+-- - old/history version = _flag = 'u'
+-- - deleted = latest delete marker มี _flag = 'd'
+-- - restore = copy old version เป็น new current version
 --
 -- Table หลัก:
--- 1. data_schema
--- 2. data
--- 3. form
--- 4. tableview
+-- 1. business
+-- 2. data_schema
+-- 3. data
+-- 4. form
+-- 5. tableview
 --
 -- หมายเหตุ:
 -- - _modify_datetime ใช้รูปแบบ YYYYMMDDHHMMSS เป็น BIGINT
@@ -34,9 +37,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS business (
   id BIGSERIAL PRIMARY KEY,
 
-  _rootid TEXT NOT NULL,
+  _rootid BIGINT NOT NULL,
   _prev_id BIGINT NULL REFERENCES business(id),
-  _doc_version INTEGER NOT NULL DEFAULT 1,
   _flag TEXT NOT NULL DEFAULT '',
 
   name TEXT NOT NULL,
@@ -46,18 +48,16 @@ CREATE TABLE IF NOT EXISTS business (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT business_doc_version_positive
-    CHECK (_doc_version >= 1),
-
   CONSTRAINT business_flag_allowed
-    CHECK (_flag IN ('', 'd'))
+    CHECK (_flag IN ('', 'u', 'd'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_business_rootid
   ON business (_rootid);
 
-CREATE INDEX IF NOT EXISTS idx_business_latest
-  ON business (_rootid, _doc_version DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_business_current
+  ON business (_rootid, id DESC)
+  WHERE _flag = '';
 
 CREATE INDEX IF NOT EXISTS idx_business_flag
   ON business (_flag);
@@ -74,9 +74,8 @@ CREATE INDEX IF NOT EXISTS idx_business_name
 CREATE TABLE IF NOT EXISTS data_schema (
   id BIGSERIAL PRIMARY KEY,
 
-  _rootid TEXT NOT NULL,
+  _rootid BIGINT NOT NULL,
   _prev_id BIGINT NULL REFERENCES data_schema(id),
-  _doc_version INTEGER NOT NULL DEFAULT 1,
   _flag TEXT NOT NULL DEFAULT '',
 
   business_id BIGINT NULL REFERENCES business(id),
@@ -88,19 +87,9 @@ CREATE TABLE IF NOT EXISTS data_schema (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT data_schema_doc_version_positive
-    CHECK (_doc_version >= 1),
-
   CONSTRAINT data_schema_flag_allowed
     CHECK (_flag IN ('', 'u', 'd'))
 );
-
-ALTER TABLE data_schema
-  DROP CONSTRAINT IF EXISTS data_schema_flag_allowed;
-
-ALTER TABLE data_schema
-  ADD CONSTRAINT data_schema_flag_allowed
-  CHECK (_flag IN ('', 'u', 'd'));
 
 CREATE INDEX IF NOT EXISTS idx_data_schema_business_id
   ON data_schema (business_id);
@@ -108,8 +97,9 @@ CREATE INDEX IF NOT EXISTS idx_data_schema_business_id
 CREATE INDEX IF NOT EXISTS idx_data_schema_rootid
   ON data_schema (_rootid);
 
-CREATE INDEX IF NOT EXISTS idx_data_schema_latest
-  ON data_schema (_rootid, _doc_version DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_data_schema_current
+  ON data_schema (_rootid, id DESC)
+  WHERE _flag = '';
 
 CREATE INDEX IF NOT EXISTS idx_data_schema_flag
   ON data_schema (_flag);
@@ -141,9 +131,8 @@ CREATE INDEX IF NOT EXISTS idx_data_schema_payload_gin
 CREATE TABLE IF NOT EXISTS data (
   id BIGSERIAL PRIMARY KEY,
 
-  _rootid TEXT NOT NULL,
+  _rootid BIGINT NOT NULL,
   _prev_id BIGINT NULL REFERENCES data(id),
-  _doc_version INTEGER NOT NULL DEFAULT 1,
   _flag TEXT NOT NULL DEFAULT '',
 
   _transfer_version BIGINT NOT NULL DEFAULT 0,
@@ -156,9 +145,6 @@ CREATE TABLE IF NOT EXISTS data (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT data_doc_version_positive
-    CHECK (_doc_version >= 1),
-
   CONSTRAINT data_flag_allowed
     CHECK (_flag IN ('', 'u', 'd')),
 
@@ -169,8 +155,9 @@ CREATE TABLE IF NOT EXISTS data (
 CREATE INDEX IF NOT EXISTS idx_data_rootid
   ON data (_rootid);
 
-CREATE INDEX IF NOT EXISTS idx_data_latest
-  ON data (_rootid, _doc_version DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_data_current
+  ON data (_rootid, id DESC)
+  WHERE _flag = '';
 
 CREATE INDEX IF NOT EXISTS idx_data_schema_id
   ON data (data_schema_id);
@@ -190,13 +177,6 @@ CREATE INDEX IF NOT EXISTS idx_data_transfer_pending
 CREATE INDEX IF NOT EXISTS idx_data_payload_gin
   ON data USING GIN (payload);
 
-ALTER TABLE data
-  DROP CONSTRAINT IF EXISTS data_flag_allowed;
-
-ALTER TABLE data
-  ADD CONSTRAINT data_flag_allowed
-  CHECK (_flag IN ('', 'u', 'd'));
-
 
 -- =====================================================
 -- form
@@ -208,19 +188,18 @@ ALTER TABLE data
 --
 -- data_schema_rootid:
 --   optional latest-root/migrate mode
---   ใช้ตอนต้องการผูกกับ schema family แล้ว resolve latest
+--   ใช้ตอนต้องการผูกกับ schema family แล้ว resolve current schema
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS form (
   id BIGSERIAL PRIMARY KEY,
 
-  _rootid TEXT NOT NULL,
+  _rootid BIGINT NOT NULL,
   _prev_id BIGINT NULL REFERENCES form(id),
-  _doc_version INTEGER NOT NULL DEFAULT 1,
   _flag TEXT NOT NULL DEFAULT '',
 
   data_schema_id BIGINT NULL REFERENCES data_schema(id),
-  data_schema_rootid TEXT NULL,
+  data_schema_rootid BIGINT NULL,
 
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
 
@@ -228,11 +207,8 @@ CREATE TABLE IF NOT EXISTS form (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT form_doc_version_positive
-    CHECK (_doc_version >= 1),
-
   CONSTRAINT form_flag_allowed
-    CHECK (_flag IN ('', 'd')),
+    CHECK (_flag IN ('', 'u', 'd')),
 
   CONSTRAINT form_schema_binding_required
     CHECK (
@@ -244,8 +220,9 @@ CREATE TABLE IF NOT EXISTS form (
 CREATE INDEX IF NOT EXISTS idx_form_rootid
   ON form (_rootid);
 
-CREATE INDEX IF NOT EXISTS idx_form_latest
-  ON form (_rootid, _doc_version DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_form_current
+  ON form (_rootid, id DESC)
+  WHERE _flag = '';
 
 CREATE INDEX IF NOT EXISTS idx_form_data_schema_id
   ON form (data_schema_id);
@@ -270,19 +247,18 @@ CREATE INDEX IF NOT EXISTS idx_form_payload_gin
 --
 -- data_schema_rootid:
 --   latest-root table view
---   ใช้แสดง data หลาย schema version โดยยึด schema ล่าสุด
+--   ใช้แสดง data หลาย schema version โดยยึด schema current/latest
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS tableview (
   id BIGSERIAL PRIMARY KEY,
 
-  _rootid TEXT NOT NULL,
+  _rootid BIGINT NOT NULL,
   _prev_id BIGINT NULL REFERENCES tableview(id),
-  _doc_version INTEGER NOT NULL DEFAULT 1,
   _flag TEXT NOT NULL DEFAULT '',
 
   data_schema_id BIGINT NULL REFERENCES data_schema(id),
-  data_schema_rootid TEXT NULL,
+  data_schema_rootid BIGINT NULL,
 
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
 
@@ -290,11 +266,8 @@ CREATE TABLE IF NOT EXISTS tableview (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT tableview_doc_version_positive
-    CHECK (_doc_version >= 1),
-
   CONSTRAINT tableview_flag_allowed
-    CHECK (_flag IN ('', 'd')),
+    CHECK (_flag IN ('', 'u', 'd')),
 
   CONSTRAINT tableview_schema_binding_required
     CHECK (
@@ -306,8 +279,9 @@ CREATE TABLE IF NOT EXISTS tableview (
 CREATE INDEX IF NOT EXISTS idx_tableview_rootid
   ON tableview (_rootid);
 
-CREATE INDEX IF NOT EXISTS idx_tableview_latest
-  ON tableview (_rootid, _doc_version DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_tableview_current
+  ON tableview (_rootid, id DESC)
+  WHERE _flag = '';
 
 CREATE INDEX IF NOT EXISTS idx_tableview_data_schema_id
   ON tableview (data_schema_id);

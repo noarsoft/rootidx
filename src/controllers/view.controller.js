@@ -1,6 +1,12 @@
 // src/controllers/view.controller.js
 
 const ViewService = require("../services/view.service");
+const {
+  getListOptions,
+  getHistoryOptions,
+  getPaginationOptions,
+  normalizeBool,
+} = require("../utils/query-options");
 
 function createViewController(db) {
   const viewService = new ViewService(db);
@@ -52,10 +58,9 @@ function createViewController(db) {
     async getLatestByRootId(req, res, next) {
       try {
         const { rootid } = req.params;
-        const includeDeleted = req.query.includeDeleted === "true";
 
         const result = await viewService.getLatestViewByRootId(rootid, {
-          includeDeleted,
+          includeDeleted: normalizeBool(req.query.includeDeleted),
         });
 
         return res.json({
@@ -70,9 +75,7 @@ function createViewController(db) {
     async listLatest(req, res, next) {
       try {
         const result = await viewService.listLatestViews({
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
+          ...getListOptions(req.query),
           data_schema_id: req.query.data_schema_id,
           data_schema_rootid: req.query.data_schema_rootid,
         });
@@ -90,11 +93,10 @@ function createViewController(db) {
       try {
         const { schemaId } = req.params;
 
-        const result = await viewService.listLatestViewsBySchemaId(schemaId, {
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
-        });
+        const result = await viewService.listLatestViewsBySchemaId(
+          schemaId,
+          getListOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -111,11 +113,7 @@ function createViewController(db) {
 
         const result = await viewService.listLatestViewsBySchemaRootId(
           schemaRootId,
-          {
-            includeDeleted: req.query.includeDeleted === "true",
-            limit: req.query.limit,
-            offset: req.query.offset,
-          }
+          getListOptions(req.query)
         );
 
         return res.json({
@@ -146,10 +144,10 @@ function createViewController(db) {
       try {
         const { id } = req.params;
 
-        const result = await viewService.renderFixedSchemaView(id, {
-          limit: req.query.limit,
-          offset: req.query.offset,
-        });
+        const result = await viewService.renderFixedSchemaView(
+          id,
+          getPaginationOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -164,10 +162,10 @@ function createViewController(db) {
       try {
         const { id } = req.params;
 
-        const result = await viewService.renderLatestRootSchemaView(id, {
-          limit: req.query.limit,
-          offset: req.query.offset,
-        });
+        const result = await viewService.renderLatestRootSchemaView(
+          id,
+          getPaginationOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -199,7 +197,10 @@ function createViewController(db) {
       try {
         const { rootid } = req.params;
 
-        const result = await viewService.getViewHistory(rootid);
+        const result = await viewService.getViewHistory(
+          rootid,
+          getHistoryOptions(req.query)
+        );
 
         return res.json({
           ok: true,

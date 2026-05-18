@@ -5,12 +5,16 @@
 // หลักการ:
 // - ทุก table เป็น versioned object
 // - ไม่มี _is_active
-// - latest/current = ORDER BY _doc_version DESC, id DESC
-// - deleted = latest row มี _flag = 'd'
-// - delete = insert version ใหม่ _flag='d'
-// - restore = copy old version เป็น new version
+// - ไม่มี _doc_version
+// - current/latest = row ที่ _flag = ''
+// - old/history version = _flag = 'u'
+// - deleted marker = _flag = 'd'
+// - update/upsert = insert version ใหม่ แล้ว mark previous current เป็น _flag='u'
+// - delete = insert delete marker _flag='d' แล้ว mark previous current เป็น _flag='u'
+// - restore = copy old version เป็น new current version
 //
 // ใช้ได้กับ table:
+// - business
 // - data_schema
 // - data
 // - form
@@ -21,7 +25,7 @@
 //   เช่น 20260514083045
 // -----------------------------------------------------------------------------
 
-const crypto = require("node:crypto");
+const config = require("../config/config");
 
 const ALLOWED_TABLES = new Set([
   "business",
@@ -35,9 +39,9 @@ const SYSTEM_FIELDS = new Set([
   "id",
   "_rootid",
   "_prev_id",
-  "_doc_version",
   "_flag",
   "_transfer_version",
+  "_transfer_datetime",
   "_modify_datetime",
   "created_at",
   "updated_at",
@@ -64,12 +68,46 @@ function nowYmdHmsNumber() {
   return Number(`${yyyy}${mm}${dd}${hh}${mi}${ss}`);
 }
 
-function newRootId() {
-  if (typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
+async function queryOne(db, sql, values = []) {
+  const result = await db.query(sql, values);
+  return result.rows[0] || null;
+}
+
+async function queryMany(db, sql, values = []) {
+  const result = await db.query(sql, values);
+  return result.rows;
+}
+
+async function reserveNextIdForTable(db, table) {
+  const seqRow = await queryOne(
+    db,
+    `
+      SELECT pg_get_serial_sequence($1, 'id') AS seq
+    `,
+    [table]
+  );
+
+  if (!seqRow || !seqRow.seq) {
+    const err = new Error(`Cannot resolve serial sequence for table: ${table}`);
+    err.code = "SERIAL_SEQUENCE_NOT_FOUND";
+    throw err;
   }
 
-  return crypto.randomBytes(16).toString("hex");
+  const nextIdRow = await queryOne(
+    db,
+    `
+      SELECT nextval($1::regclass)::TEXT AS id
+    `,
+    [seqRow.seq]
+  );
+
+  if (!nextIdRow || !nextIdRow.id) {
+    const err = new Error(`Cannot reserve next id for table: ${table}`);
+    err.code = "SERIAL_NEXTVAL_FAILED";
+    throw err;
+  }
+
+  return nextIdRow.id;
 }
 
 function assertAllowedTable(table) {
@@ -107,6 +145,35 @@ function normalizeFlag(flag) {
   }
 
   return flag;
+}
+
+function normalizeLimit(value) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n) || n <= 0) {
+    return config.rootid.defaultLimit;
+  }
+
+  return Math.min(Math.floor(n), config.rootid.maxLimit);
+}
+
+function normalizeOffset(value) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+
+  return Math.floor(n);
+}
+
+function normalizeOrder(value, defaultOrder = "ASC") {
+  const s = String(value || defaultOrder).trim().toUpperCase();
+
+  if (s === "ASC") return "ASC";
+  if (s === "DESC") return "DESC";
+
+  return defaultOrder === "DESC" ? "DESC" : "ASC";
 }
 
 function assertPlainObject(value, label = "value") {
@@ -162,16 +229,6 @@ function buildInsert(table, row) {
   return { sql, values };
 }
 
-async function queryOne(db, sql, values = []) {
-  const result = await db.query(sql, values);
-  return result.rows[0] || null;
-}
-
-async function queryMany(db, sql, values = []) {
-  const result = await db.query(sql, values);
-  return result.rows;
-}
-
 async function getById(db, table, id) {
   assertAllowedTable(table);
 
@@ -187,34 +244,57 @@ async function getById(db, table, id) {
   );
 }
 
-async function getLatestByRootId(db, table, rootid, options = {}) {
+async function getCurrentByRootId(db, table, rootid) {
   assertAllowedTable(table);
 
-  const includeDeleted = Boolean(options.includeDeleted);
-
-  const latest = await queryOne(
+  return queryOne(
     db,
     `
       SELECT *
       FROM ${tableIdent(table)}
       WHERE _rootid = $1
-      ORDER BY _doc_version DESC, id DESC
+        AND _flag = $2
+      ORDER BY id DESC
+      LIMIT 1
+    `,
+    [rootid, FLAG_NORMAL]
+  );
+}
+
+async function getLastVersionByRootId(db, table, rootid) {
+  assertAllowedTable(table);
+
+  return queryOne(
+    db,
+    `
+      SELECT *
+      FROM ${tableIdent(table)}
+      WHERE _rootid = $1
+      ORDER BY id DESC
       LIMIT 1
     `,
     [rootid]
   );
-
-  if (!latest) return null;
-
-  if (!includeDeleted && latest._flag === FLAG_DELETED) {
-    return null;
-  }
-
-  return latest;
 }
 
-async function getHistory(db, table, rootid) {
+async function getLatestByRootId(db, table, rootid, options = {}) {
   assertAllowedTable(table);
+
+  const includeDeleted = Boolean(options.includeDeleted);
+
+  if (includeDeleted) {
+    return getLastVersionByRootId(db, table, rootid);
+  }
+
+  return getCurrentByRootId(db, table, rootid);
+}
+
+async function getHistory(db, table, rootid, options = {}) {
+  assertAllowedTable(table);
+
+  const limit = normalizeLimit(options.limit);
+  const offset = normalizeOffset(options.offset);
+  const orderSql = normalizeOrder(options.order, "ASC");
 
   return queryMany(
     db,
@@ -222,9 +302,10 @@ async function getHistory(db, table, rootid) {
       SELECT *
       FROM ${tableIdent(table)}
       WHERE _rootid = $1
-      ORDER BY _doc_version ASC, id ASC
+      ORDER BY id ${orderSql}
+      LIMIT $2 OFFSET $3
     `,
-    [rootid]
+    [rootid, limit, offset]
   );
 }
 
@@ -232,32 +313,37 @@ async function listLatest(db, table, options = {}) {
   assertAllowedTable(table);
 
   const includeDeleted = Boolean(options.includeDeleted);
+  const limit = normalizeLimit(options.limit);
+  const offset = normalizeOffset(options.offset);
 
-  const limit = Number.isInteger(Number(options.limit))
-    ? Math.max(1, Math.min(Number(options.limit), 1000))
-    : 100;
-
-  const offset = Number.isInteger(Number(options.offset))
-    ? Math.max(0, Number(options.offset))
-    : 0;
-
-  const whereDeleted = includeDeleted ? "TRUE" : `_flag <> '${FLAG_DELETED}'`;
+  if (includeDeleted) {
+    return queryMany(
+      db,
+      `
+        WITH latest AS (
+          SELECT DISTINCT ON (_rootid) *
+          FROM ${tableIdent(table)}
+          ORDER BY _rootid, id DESC
+        )
+        SELECT *
+        FROM latest
+        ORDER BY updated_at DESC, id DESC
+        LIMIT $1 OFFSET $2
+      `,
+      [limit, offset]
+    );
+  }
 
   return queryMany(
     db,
     `
-      WITH latest AS (
-        SELECT DISTINCT ON (_rootid) *
-        FROM ${tableIdent(table)}
-        ORDER BY _rootid, _doc_version DESC, id DESC
-      )
       SELECT *
-      FROM latest
-      WHERE ${whereDeleted}
+      FROM ${tableIdent(table)}
+      WHERE _flag = $1
       ORDER BY updated_at DESC, id DESC
-      LIMIT $1 OFFSET $2
+      LIMIT $2 OFFSET $3
     `,
-    [limit, offset]
+    [FLAG_NORMAL, limit, offset]
   );
 }
 
@@ -267,21 +353,35 @@ async function createRoot(db, table, input = {}) {
   assertCreateFlagAllowed(input);
 
   const clean = stripSystemFields(input);
+  const rootId = await reserveNextIdForTable(db, table);
 
   const row = {
-    _rootid: input.rootid || newRootId(),
+    id: rootId,
+    _rootid: rootId,
     _prev_id: null,
-    _doc_version: 1,
     _flag: FLAG_NORMAL,
     ...clean,
     _modify_datetime: nowYmdHmsNumber(),
   };
 
-  // ไม่ให้ rootid กลายเป็น column แปลก ๆ
-  delete row.rootid;
-
   const { sql, values } = buildInsert(table, row);
   return queryOne(db, sql, values);
+}
+
+async function markCurrentAsUpdated(db, table, id) {
+  if (!id) return null;
+
+  return db.query(
+    `
+      UPDATE ${tableIdent(table)}
+      SET _flag = $1,
+          _modify_datetime = $2,
+          updated_at = NOW()
+      WHERE id = $3
+        AND _flag = $4
+    `,
+    [FLAG_UPDATED, nowYmdHmsNumber(), id, FLAG_NORMAL]
+  );
 }
 
 async function createNextVersion(db, table, rootid, patch = {}, options = {}) {
@@ -320,48 +420,64 @@ async function createNextVersion(db, table, rootid, patch = {}, options = {}) {
 
     _rootid: latest._rootid,
     _prev_id: latest.id,
-    _doc_version: Number(latest._doc_version) + 1,
     _flag: nextFlag,
     _modify_datetime: nowYmdHmsNumber(),
   };
 
   const { sql, values } = buildInsert(table, row);
-  return queryOne(db, sql, values);
+  const inserted = await queryOne(db, sql, values);
+
+  // new current ถูก insert แล้ว
+  // previous current ต้องกลายเป็น historical row
+  if (latest._flag === FLAG_NORMAL) {
+    await markCurrentAsUpdated(db, table, latest.id);
+  }
+
+  return inserted;
 }
 
 async function softDeleteByRootId(db, table, rootid) {
   assertAllowedTable(table);
 
-  const latest = await getLatestByRootId(db, table, rootid, {
-    includeDeleted: true,
-  });
+  const current = await getCurrentByRootId(db, table, rootid);
 
-  if (!latest) {
-    const err = new Error(`Object not found: ${rootid}`);
-    err.code = "OBJECT_NOT_FOUND";
+  if (!current) {
+    const lastVersion = await getLastVersionByRootId(db, table, rootid);
+
+    if (!lastVersion) {
+      const err = new Error(`Object not found: ${rootid}`);
+      err.code = "OBJECT_NOT_FOUND";
+      throw err;
+    }
+
+    if (lastVersion._flag === FLAG_DELETED) {
+      const err = new Error(`Object already deleted: ${rootid}`);
+      err.code = "OBJECT_ALREADY_DELETED";
+      throw err;
+    }
+
+    const err = new Error(`Current object not found: ${rootid}`);
+    err.code = "LATEST_NOT_FOUND";
     throw err;
   }
 
-  if (latest._flag === FLAG_DELETED) {
-    const err = new Error(`Object already deleted: ${rootid}`);
-    err.code = "OBJECT_ALREADY_DELETED";
-    throw err;
-  }
-
-  const base = stripSystemFields(latest);
+  const base = stripSystemFields(current);
 
   const row = {
     ...base,
 
-    _rootid: latest._rootid,
-    _prev_id: latest.id,
-    _doc_version: Number(latest._doc_version) + 1,
+    _rootid: current._rootid,
+    _prev_id: current.id,
     _flag: FLAG_DELETED,
     _modify_datetime: nowYmdHmsNumber(),
   };
 
   const { sql, values } = buildInsert(table, row);
-  return queryOne(db, sql, values);
+  const inserted = await queryOne(db, sql, values);
+
+  await markCurrentAsUpdated(db, table, current.id);
+
+  return inserted;
 }
 
 async function restoreVersion(db, table, restoreId) {
@@ -381,15 +497,15 @@ async function restoreVersion(db, table, restoreId) {
     throw err;
   }
 
-  const latest = await getLatestByRootId(db, table, source._rootid, {
-    includeDeleted: true,
-  });
+  const lastVersion = await getLastVersionByRootId(db, table, source._rootid);
 
-  if (!latest) {
+  if (!lastVersion) {
     const err = new Error(`Latest object not found: ${source._rootid}`);
     err.code = "LATEST_NOT_FOUND";
     throw err;
   }
+
+  const current = await getCurrentByRootId(db, table, source._rootid);
 
   const base = stripSystemFields(source);
 
@@ -397,23 +513,33 @@ async function restoreVersion(db, table, restoreId) {
     ...base,
 
     _rootid: source._rootid,
-    _prev_id: latest.id,
-    _doc_version: Number(latest._doc_version) + 1,
+    _prev_id: lastVersion.id,
     _flag: FLAG_NORMAL,
     _modify_datetime: nowYmdHmsNumber(),
   };
 
   const { sql, values } = buildInsert(table, row);
-  return queryOne(db, sql, values);
+  const inserted = await queryOne(db, sql, values);
+
+  // ถ้ามี current เดิม ให้ mark เป็น historical
+  // ถ้าก่อนหน้าเป็น deleted marker จะไม่มี current ให้ mark
+  if (current) {
+    await markCurrentAsUpdated(db, table, current.id);
+  }
+
+  return inserted;
 }
 
 async function isDeleted(db, table, rootid) {
-  const latest = await getLatestByRootId(db, table, rootid, {
-    includeDeleted: true,
-  });
+  const current = await getCurrentByRootId(db, table, rootid);
 
-  if (!latest) return false;
-  return latest._flag === FLAG_DELETED;
+  if (current) return false;
+
+  const lastVersion = await getLastVersionByRootId(db, table, rootid);
+
+  if (!lastVersion) return false;
+
+  return lastVersion._flag === FLAG_DELETED;
 }
 
 async function getLatestSchemaByRootId(db, schemaRootId, options = {}) {
@@ -446,11 +572,12 @@ module.exports = {
   ALLOWED_TABLES,
 
   nowYmdHmsNumber,
-  newRootId,
   quoteIdent,
   tableIdent,
 
   getById,
+  getCurrentByRootId,
+  getLastVersionByRootId,
   getLatestByRootId,
   getHistory,
   listLatest,

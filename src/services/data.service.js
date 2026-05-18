@@ -5,12 +5,14 @@
 
 const BaseVersionedRepository = require("../repositories/base-versioned.repository");
 const SchemaService = require("./schema.service");
+const FormService = require("./form.service");
 
 class DataService {
   constructor(db) {
     this.db = db;
     this.repo = new BaseVersionedRepository(db, "data");
     this.schemaService = new SchemaService(db);
+    this.formService = new FormService(db);
   }
 
   async createData(input = {}) {
@@ -40,7 +42,6 @@ class DataService {
     }
 
     return this.repo.create({
-      rootid: input.rootid,
       data_schema_id: Number(dataSchemaId),
       payload,
     });
@@ -53,9 +54,9 @@ class DataService {
     const payload =
       input.payload !== undefined
         ? {
-          ...(latest.payload || {}),
-          ...(input.payload || {}),
-        }
+            ...(latest.payload || {}),
+            ...(input.payload || {}),
+          }
         : latest.payload || {};
 
     const validation = await this.schemaService.validatePayloadBySchemaId(
@@ -85,9 +86,9 @@ class DataService {
     const sourcePayload =
       input.payload !== undefined
         ? {
-          ...(latest.payload || {}),
-          ...(input.payload || {}),
-        }
+            ...(latest.payload || {}),
+            ...(input.payload || {}),
+          }
         : latest.payload || {};
 
     const sourceValidation = await this.schemaService.validatePayloadBySchemaId(
@@ -159,6 +160,32 @@ class DataService {
     return data;
   }
 
+  async getDataEditContext(id) {
+    const data = await this.getDataById(id);
+    const compared = await this.schemaService.compareRowWithLatestSchema(data);
+
+    const latestForm = await this.formService.getLatestFormBySchemaRootId(
+      compared.latestSchema._rootid,
+      {
+        includeDeleted: false,
+        limit: 1,
+        offset: 0,
+      }
+    );
+
+    return {
+      mode: "edit_data_version_with_latest_form",
+      data,
+      oldSchema: compared.oldSchema,
+      latestSchema: compared.latestSchema,
+      latestForm,
+      isLatestSchema: compared.isLatest,
+      cells: compared.cells,
+      removed: compared.removed,
+      compare: compared.compare,
+    };
+  }
+
   async getLatestDataByRootId(rootid, options = {}) {
     const data = await this.repo.getLatestByRootId(rootid, options);
 
@@ -177,7 +204,10 @@ class DataService {
     }
 
     if (options.data_schema_rootid) {
-      return this.listLatestDataBySchemaRootId(options.data_schema_rootid, options);
+      return this.listLatestDataBySchemaRootId(
+        options.data_schema_rootid,
+        options
+      );
     }
 
     return this.repo.listLatest(options);
@@ -191,8 +221,8 @@ class DataService {
     return this.repo.listLatestInSchemaFamily(schemaRootId, options);
   }
 
-  async getDataHistory(rootid) {
-    return this.repo.getHistory(rootid);
+  async getDataHistory(rootid, options = {}) {
+    return this.repo.getHistory(rootid, options);
   }
 
   async deleteData(rootid) {
