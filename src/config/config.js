@@ -75,6 +75,7 @@ const config = {
 
     flags: {
       normal: "",
+      updated: "u",
       deleted: "d",
     },
   },

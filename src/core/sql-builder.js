@@ -10,25 +10,30 @@
 //
 // หมายเหตุ:
 // - ไม่มี _is_active
-// - list latest ควร latest ก่อน แล้วค่อย where ชั้นนอก
+// - ไม่มี _doc_version
+// - latest/current = _flag = ''
 // - table view ใช้ table ชื่อ tableview ไม่ใช้ view เพื่อเลี่ยง keyword SQL
 // -----------------------------------------------------------------------------
 
-const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 1000;
+const config = require("../config/config");
+
+const DEFAULT_LIMIT = config.rootid.defaultLimit;
+const MAX_LIMIT = config.rootid.maxLimit;
 
 const SYSTEM_FIELDS = new Set([
   "id",
   "_rootid",
   "_prev_id",
-  "_doc_version",
   "_flag",
+  "_transfer_version",
+  "_transfer_datetime",
   "_modify_datetime",
   "created_at",
   "updated_at",
 ]);
 
 const ALLOWED_TABLES = new Set([
+  "business",
   "data_schema",
   "data",
   "form",
@@ -39,11 +44,11 @@ const COMMON_ALLOWED_COLUMNS = new Set([
   "id",
   "_rootid",
   "_prev_id",
-  "_doc_version",
   "_flag",
   "name",
   "data_schema_id",
   "data_schema_rootid",
+  "business_id",
   "_modify_datetime",
   "created_at",
   "updated_at",
@@ -77,7 +82,9 @@ function quoteIdent(identifier) {
 function normalizeLimit(limit, defaultLimit = DEFAULT_LIMIT) {
   const n = Number(limit);
 
-  if (!Number.isFinite(n) || n <= 0) return defaultLimit;
+  if (!Number.isFinite(n) || n <= 0) {
+    return defaultLimit;
+  }
 
   return Math.min(Math.floor(n), MAX_LIMIT);
 }
@@ -85,7 +92,9 @@ function normalizeLimit(limit, defaultLimit = DEFAULT_LIMIT) {
 function normalizeOffset(offset) {
   const n = Number(offset);
 
-  if (!Number.isFinite(n) || n < 0) return 0;
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
 
   return Math.floor(n);
 }
@@ -104,10 +113,14 @@ function parseSortDirection(value) {
 /**
  * orderBy แบบปลอดภัย
  *
- * ตัวอย่าง input:
+ * ตัวอย่าง:
  *   parseOrderBy("updated_at", "desc")
  */
-function parseOrderBy(orderBy, orderDir = "DESC", allowedColumns = COMMON_ALLOWED_COLUMNS) {
+function parseOrderBy(
+  orderBy,
+  orderDir = "DESC",
+  allowedColumns = COMMON_ALLOWED_COLUMNS
+) {
   const field = String(orderBy || "updated_at").trim();
 
   if (!allowedColumns.has(field)) {
@@ -200,7 +213,9 @@ function buildPayloadWhere(filters = {}, options = {}) {
       continue;
     }
 
-    clauses.push(`${prefix}${quoteIdent(payloadColumn)}->>$${index} = $${index + 1}`);
+    clauses.push(
+      `${prefix}${quoteIdent(payloadColumn)}->>$${index} = $${index + 1}`
+    );
     values.push(field, String(value));
     index += 2;
   }
@@ -253,7 +268,9 @@ function buildInsert(table, row) {
 }
 
 /**
- * helper สำหรับ latest CTE
+ * helper สำหรับ current/latest CTE
+ *
+ * latest/current = _flag = ''
  */
 function buildLatestCte(table, cteName = "latest") {
   assertAllowedTable(table);
@@ -262,19 +279,46 @@ function buildLatestCte(table, cteName = "latest") {
 
   return `
     ${quoteIdent(cteName)} AS (
+      SELECT *
+      FROM ${quoteIdent(table)}
+      WHERE _flag = ''
+    )
+  `;
+}
+
+/**
+ * helper สำหรับ last version ต่อ _rootid
+ *
+ * ใช้เมื่อต้อง includeDeleted=true แล้วอยากเห็น delete marker ล่าสุดด้วย
+ */
+function buildLastVersionCte(table, cteName = "latest") {
+  assertAllowedTable(table);
+  assertSafeIdent(table, "table");
+  assertSafeIdent(cteName, "cte name");
+
+  return `
+    ${quoteIdent(cteName)} AS (
       SELECT DISTINCT ON (_rootid) *
       FROM ${quoteIdent(table)}
-      ORDER BY _rootid, _doc_version DESC, id DESC
+      ORDER BY _rootid, id DESC
     )
   `;
 }
 
 /**
  * normalize query object สำหรับ list endpoint
+ *
+ * หมายเหตุ:
+ * - helper นี้ยังคงไว้เผื่อบาง code path ใช้ sql-builder โดยตรง
+ * - controller หลักควรใช้ src/utils/query-options.js
  */
 function normalizeListOptions(query = {}) {
   return {
-    includeDeleted: query.includeDeleted === true || query.includeDeleted === "true",
+    includeDeleted:
+      query.includeDeleted === true ||
+      query.includeDeleted === "true" ||
+      query.includeDeleted === "1" ||
+      query.includeDeleted === 1,
     limit: normalizeLimit(query.limit),
     offset: normalizeOffset(query.offset),
     orderBy: query.orderBy || "updated_at",
@@ -303,6 +347,7 @@ module.exports = {
   joinWhere,
   buildInsert,
   buildLatestCte,
+  buildLastVersionCte,
 
   normalizeListOptions,
 };

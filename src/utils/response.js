@@ -3,6 +3,8 @@
 // Standard API response helpers
 // -----------------------------------------------------------------------------
 
+const config = require("../config/config");
+
 function success(res, data = null, options = {}) {
   const status = options.status || 200;
 
@@ -64,7 +66,7 @@ function fail(res, error = {}, options = {}) {
 }
 
 function paginationMeta(options = {}) {
-  const limit = Number(options.limit || 100);
+  const limit = Number(options.limit || config.rootid.defaultLimit);
   const offset = Number(options.offset || 0);
   const count = Number(options.count || 0);
 

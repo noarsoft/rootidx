@@ -1,6 +1,11 @@
 // src/controllers/business.controller.js
 
 const BusinessService = require("../services/business.service");
+const {
+  getListOptions,
+  getHistoryOptions,
+  normalizeBool,
+} = require("../utils/query-options");
 
 function createBusinessController(db) {
   const service = new BusinessService(db);
@@ -41,9 +46,11 @@ function createBusinessController(db) {
     async getLatestByRootId(req, res, next) {
       try {
         const { rootid } = req.params;
+
         const result = await service.getLatestByRootId(rootid, {
-          includeDeleted: req.query.includeDeleted === "true",
+          includeDeleted: normalizeBool(req.query.includeDeleted),
         });
+
         return res.json({ ok: true, data: result });
       } catch (err) {
         return next(err);
@@ -52,11 +59,7 @@ function createBusinessController(db) {
 
     async listLatest(req, res, next) {
       try {
-        const result = await service.listLatest({
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
-        });
+        const result = await service.listLatest(getListOptions(req.query));
         return res.json({ ok: true, data: result });
       } catch (err) {
         return next(err);
@@ -66,7 +69,12 @@ function createBusinessController(db) {
     async getHistory(req, res, next) {
       try {
         const { rootid } = req.params;
-        const result = await service.getHistory(rootid);
+
+        const result = await service.getHistory(
+          rootid,
+          getHistoryOptions(req.query)
+        );
+
         return res.json({ ok: true, data: result });
       } catch (err) {
         return next(err);

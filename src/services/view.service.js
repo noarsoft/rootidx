@@ -220,7 +220,6 @@ class ViewService {
     }
 
     return this.repo.create({
-      rootid: input.rootid,
       data_schema_id: input.data_schema_id ? Number(input.data_schema_id) : null,
       data_schema_rootid: input.data_schema_rootid || null,
       payload: input.payload || {},
@@ -231,7 +230,9 @@ class ViewService {
     const latest = await this.repo.getLatestOrThrow(rootid);
 
     const dataSchemaId =
-      input.data_schema_id !== undefined ? input.data_schema_id : latest.data_schema_id;
+      input.data_schema_id !== undefined
+        ? input.data_schema_id
+        : latest.data_schema_id;
 
     const dataSchemaRootId =
       input.data_schema_rootid !== undefined
@@ -289,7 +290,10 @@ class ViewService {
     }
 
     if (options.data_schema_rootid) {
-      return this.listLatestViewsBySchemaRootId(options.data_schema_rootid, options);
+      return this.listLatestViewsBySchemaRootId(
+        options.data_schema_rootid,
+        options
+      );
     }
 
     return this.repo.listLatest(options);
@@ -300,7 +304,7 @@ class ViewService {
   }
 
   async listLatestViewsBySchemaRootId(schemaRootId, options = {}) {
-    return this.repo.listLatestBySchemaRootId(schemaRootId, options);
+    return this.repo.listLatestInSchemaFamily(schemaRootId, options);
   }
 
   async getViewEditorContext(id) {
@@ -528,8 +532,8 @@ class ViewService {
     };
   }
 
-  async getViewHistory(rootid) {
-    return this.repo.getHistory(rootid);
+  async getViewHistory(rootid, options = {}) {
+    return this.repo.getHistory(rootid, options);
   }
 
   async deleteView(rootid) {

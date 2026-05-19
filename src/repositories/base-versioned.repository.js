@@ -3,6 +3,7 @@
 // Base repository สำหรับ Root-ID versioned object
 //
 // ใช้กับ table:
+// - business
 // - data_schema
 // - data
 // - form
@@ -10,16 +11,19 @@
 //
 // หลักการ:
 // - ไม่มี _is_active
-// - latest/current = ORDER BY _doc_version DESC, id DESC
-// - deleted = latest._flag = 'd'
-// - list ต้อง latest ก่อน แล้วค่อย where/filter
-// - delete/restore/update = insert version ใหม่ ไม่ update row เดิม
+// - ไม่มี _doc_version
+// - current/latest = _flag = ''
+// - old/history = _flag = 'u'
+// - deleted marker = _flag = 'd'
+// - delete/restore/update = insert version ใหม่ ไม่ update row เดิมโดยตรง
+//   ยกเว้น engine mark previous current เป็น _flag='u'
 // -----------------------------------------------------------------------------
 
+const config = require("../config/config");
 const rootidEngine = require("../core/rootid-engine");
 
-const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 1000;
+const DEFAULT_LIMIT = config.rootid.defaultLimit;
+const MAX_LIMIT = config.rootid.maxLimit;
 
 const ALLOWED_TABLES = new Set([
   "business",
@@ -29,12 +33,24 @@ const ALLOWED_TABLES = new Set([
   "tableview",
 ]);
 
+const SCHEMA_BOUND_TABLES = new Set([
+  "data",
+  "form",
+  "tableview",
+]);
+
+const TABLES_WITH_DATA_SCHEMA_ROOTID = new Set([
+  "form",
+  "tableview",
+]);
+
 const SYSTEM_FIELDS = new Set([
   "id",
   "_rootid",
   "_prev_id",
-  "_doc_version",
   "_flag",
+  "_transfer_version",
+  "_transfer_datetime",
   "_modify_datetime",
   "created_at",
   "updated_at",
@@ -44,7 +60,6 @@ const COMMON_ALLOWED_COLUMN_FILTERS = new Set([
   "id",
   "_rootid",
   "_prev_id",
-  "_doc_version",
   "_flag",
   "name",
   "data_schema_id",
@@ -321,23 +336,16 @@ class BaseVersionedRepository {
     return row;
   }
 
-  async getHistory(rootid) {
+  async getHistory(rootid, options = {}) {
     if (!rootid) {
       const err = new Error("_rootid is required");
       err.code = "ROOTID_REQUIRED";
       throw err;
     }
 
-    return rootidEngine.getHistory(this.db, this.table, rootid);
+    return rootidEngine.getHistory(this.db, this.table, rootid, options);
   }
 
-  /**
-   * list latest object ต่อ _rootid
-   *
-   * สำคัญ:
-   * - หา latest ต่อ _rootid ก่อน
-   * - แล้วค่อย filter ชั้นนอก
-   */
   async listLatest(options = {}) {
     const includeDeleted = Boolean(options.includeDeleted);
     const limit = normalizeLimit(options.limit);
@@ -360,7 +368,7 @@ class BaseVersionedRepository {
     const clauses = [];
 
     if (!includeDeleted) {
-      clauses.push(`_flag <> 'd'`);
+      clauses.push(`_flag = ''`);
     }
 
     clauses.push(...columnWhere.clauses);
@@ -375,15 +383,28 @@ class BaseVersionedRepository {
 
     values.push(limit, offset);
 
+    if (includeDeleted) {
+      return this.queryMany(
+        `
+          WITH latest AS (
+            SELECT DISTINCT ON (_rootid) *
+            FROM ${this.tableSql}
+            ORDER BY _rootid, id DESC
+          )
+          SELECT *
+          FROM latest
+          ${whereSql}
+          ORDER BY updated_at DESC, id DESC
+          LIMIT $${limitIndex} OFFSET $${offsetIndex}
+        `,
+        values
+      );
+    }
+
     return this.queryMany(
       `
-        WITH latest AS (
-          SELECT DISTINCT ON (_rootid) *
-          FROM ${this.tableSql}
-          ORDER BY _rootid, _doc_version DESC, id DESC
-        )
         SELECT *
-        FROM latest
+        FROM ${this.tableSql}
         ${whereSql}
         ORDER BY updated_at DESC, id DESC
         LIMIT $${limitIndex} OFFSET $${offsetIndex}
@@ -415,6 +436,14 @@ class BaseVersionedRepository {
       throw err;
     }
 
+    if (!TABLES_WITH_DATA_SCHEMA_ROOTID.has(this.table)) {
+      const err = new Error(
+        `Table does not support data_schema_rootid: ${this.table}`
+      );
+      err.code = "INVALID_REPOSITORY_METHOD";
+      throw err;
+    }
+
     return this.listLatest({
       ...options,
       columnFilters: {
@@ -431,8 +460,10 @@ class BaseVersionedRepository {
       throw err;
     }
 
-    if (this.table === "data_schema") {
-      const err = new Error("listLatestInSchemaFamily is not for data_schema table");
+    if (!SCHEMA_BOUND_TABLES.has(this.table)) {
+      const err = new Error(
+        `listLatestInSchemaFamily is not for table: ${this.table}`
+      );
       err.code = "INVALID_REPOSITORY_METHOD";
       throw err;
     }
@@ -440,21 +471,54 @@ class BaseVersionedRepository {
     const includeDeleted = Boolean(options.includeDeleted);
     const limit = normalizeLimit(options.limit);
     const offset = normalizeOffset(options.offset);
+    const hasSchemaRootColumn = TABLES_WITH_DATA_SCHEMA_ROOTID.has(this.table);
 
-    const deletedWhere = includeDeleted ? "TRUE" : `o._flag <> 'd'`;
+    /**
+     * รองรับ schema binding 2 แบบ:
+     *
+     * 1. fixed/edit/replay mode:
+     *    object.data_schema_id -> data_schema.id
+     *
+     * 2. root/latest mode:
+     *    object.data_schema_rootid -> data_schema._rootid
+     *
+     * หมายเหตุ:
+     * - data table ไม่มี data_schema_rootid จึง match ผ่าน data_schema_id เท่านั้น
+     * - form/tableview มี data_schema_rootid จึง match ได้ทั้ง 2 ทาง
+     */
+
+    const schemaFamilyCondition = hasSchemaRootColumn
+      ? `(ds._rootid = $1 OR o.data_schema_rootid = $1)`
+      : `ds._rootid = $1`;
+
+    if (includeDeleted) {
+      return this.queryMany(
+        `
+          WITH latest_object AS (
+            SELECT DISTINCT ON (_rootid) *
+            FROM ${this.tableSql}
+            ORDER BY _rootid, id DESC
+          )
+          SELECT o.*
+          FROM latest_object o
+          LEFT JOIN data_schema ds
+            ON ds.id = o.data_schema_id
+          WHERE ${schemaFamilyCondition}
+          ORDER BY o.updated_at DESC, o.id DESC
+          LIMIT $2 OFFSET $3
+        `,
+        [schemaRootId, limit, offset]
+      );
+    }
 
     return this.queryMany(
       `
-        WITH latest_object AS (
-          SELECT DISTINCT ON (_rootid) *
-          FROM ${this.tableSql}
-          ORDER BY _rootid, _doc_version DESC, id DESC
-        )
         SELECT o.*
-        FROM latest_object o
-        JOIN data_schema ds ON ds.id = o.data_schema_id
-        WHERE ${deletedWhere}
-          AND ds._rootid = $1
+        FROM ${this.tableSql} o
+        LEFT JOIN data_schema ds
+          ON ds.id = o.data_schema_id
+        WHERE o._flag = ''
+          AND ${schemaFamilyCondition}
         ORDER BY o.updated_at DESC, o.id DESC
         LIMIT $2 OFFSET $3
       `,
@@ -495,18 +559,27 @@ class BaseVersionedRepository {
   async countLatest(options = {}) {
     const includeDeleted = Boolean(options.includeDeleted);
 
-    const whereSql = includeDeleted ? "" : `WHERE _flag <> 'd'`;
+    if (includeDeleted) {
+      const row = await this.queryOne(
+        `
+          WITH latest AS (
+            SELECT DISTINCT ON (_rootid) *
+            FROM ${this.tableSql}
+            ORDER BY _rootid, id DESC
+          )
+          SELECT COUNT(*)::INTEGER AS count
+          FROM latest
+        `
+      );
+
+      return row ? row.count : 0;
+    }
 
     const row = await this.queryOne(
       `
-        WITH latest AS (
-          SELECT DISTINCT ON (_rootid) *
-          FROM ${this.tableSql}
-          ORDER BY _rootid, _doc_version DESC, id DESC
-        )
         SELECT COUNT(*)::INTEGER AS count
-        FROM latest
-        ${whereSql}
+        FROM ${this.tableSql}
+        WHERE _flag = ''
       `
     );
 

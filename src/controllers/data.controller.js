@@ -1,6 +1,11 @@
 // src/controllers/data.controller.js
 
 const DataService = require("../services/data.service");
+const {
+  getListOptions,
+  getHistoryOptions,
+  normalizeBool,
+} = require("../utils/query-options");
 
 function createDataController(db) {
   const dataService = new DataService(db);
@@ -49,13 +54,27 @@ function createDataController(db) {
       }
     },
 
+    async getEditContext(req, res, next) {
+      try {
+        const { id } = req.params;
+
+        const result = await dataService.getDataEditContext(id);
+
+        return res.json({
+          ok: true,
+          data: result,
+        });
+      } catch (err) {
+        return next(err);
+      }
+    },
+
     async getLatestByRootId(req, res, next) {
       try {
         const { rootid } = req.params;
-        const includeDeleted = req.query.includeDeleted === "true";
 
         const result = await dataService.getLatestDataByRootId(rootid, {
-          includeDeleted,
+          includeDeleted: normalizeBool(req.query.includeDeleted),
         });
 
         return res.json({
@@ -70,9 +89,7 @@ function createDataController(db) {
     async listLatest(req, res, next) {
       try {
         const result = await dataService.listLatestData({
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
+          ...getListOptions(req.query),
           data_schema_id: req.query.data_schema_id,
           data_schema_rootid: req.query.data_schema_rootid,
         });
@@ -90,11 +107,10 @@ function createDataController(db) {
       try {
         const { schemaId } = req.params;
 
-        const result = await dataService.listLatestDataBySchemaId(schemaId, {
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
-        });
+        const result = await dataService.listLatestDataBySchemaId(
+          schemaId,
+          getListOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -111,11 +127,7 @@ function createDataController(db) {
 
         const result = await dataService.listLatestDataBySchemaRootId(
           schemaRootId,
-          {
-            includeDeleted: req.query.includeDeleted === "true",
-            limit: req.query.limit,
-            offset: req.query.offset,
-          }
+          getListOptions(req.query)
         );
 
         return res.json({
@@ -131,7 +143,10 @@ function createDataController(db) {
       try {
         const { rootid } = req.params;
 
-        const result = await dataService.getDataHistory(rootid);
+        const result = await dataService.getDataHistory(
+          rootid,
+          getHistoryOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -208,9 +223,13 @@ function createDataController(db) {
       try {
         const { rootid } = req.params;
 
-        const result = await dataService.saveDataAsLatestSchemaVersion(rootid, req.body, {
-          force: req.body.force === true,
-        });
+        const result = await dataService.saveDataAsLatestSchemaVersion(
+          rootid,
+          req.body,
+          {
+            force: req.body.force === true,
+          }
+        );
 
         return res.json({
           ok: true,

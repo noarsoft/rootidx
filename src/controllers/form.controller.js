@@ -1,6 +1,11 @@
 // src/controllers/form.controller.js
 
 const FormService = require("../services/form.service");
+const {
+  getListOptions,
+  getHistoryOptions,
+  normalizeBool,
+} = require("../utils/query-options");
 
 function createFormController(db) {
   const formService = new FormService(db);
@@ -52,11 +57,28 @@ function createFormController(db) {
     async getLatestByRootId(req, res, next) {
       try {
         const { rootid } = req.params;
-        const includeDeleted = req.query.includeDeleted === "true";
 
         const result = await formService.getLatestFormByRootId(rootid, {
-          includeDeleted,
+          includeDeleted: normalizeBool(req.query.includeDeleted),
         });
+
+        return res.json({
+          ok: true,
+          data: result,
+        });
+      } catch (err) {
+        return next(err);
+      }
+    },
+
+    async getLatestBySchemaRootId(req, res, next) {
+      try {
+        const { schemaRootId } = req.params;
+
+        const result = await formService.getLatestFormBySchemaRootId(
+          schemaRootId,
+          getListOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -70,9 +92,7 @@ function createFormController(db) {
     async listLatest(req, res, next) {
       try {
         const result = await formService.listLatestForms({
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
+          ...getListOptions(req.query),
           data_schema_id: req.query.data_schema_id,
           data_schema_rootid: req.query.data_schema_rootid,
         });
@@ -90,11 +110,10 @@ function createFormController(db) {
       try {
         const { schemaId } = req.params;
 
-        const result = await formService.listLatestFormsBySchemaId(schemaId, {
-          includeDeleted: req.query.includeDeleted === "true",
-          limit: req.query.limit,
-          offset: req.query.offset,
-        });
+        const result = await formService.listLatestFormsBySchemaId(
+          schemaId,
+          getListOptions(req.query)
+        );
 
         return res.json({
           ok: true,
@@ -111,11 +130,7 @@ function createFormController(db) {
 
         const result = await formService.listLatestFormsBySchemaRootId(
           schemaRootId,
-          {
-            includeDeleted: req.query.includeDeleted === "true",
-            limit: req.query.limit,
-            offset: req.query.offset,
-          }
+          getListOptions(req.query)
         );
 
         return res.json({
@@ -163,7 +178,10 @@ function createFormController(db) {
       try {
         const { rootid } = req.params;
 
-        const result = await formService.getFormHistory(rootid);
+        const result = await formService.getFormHistory(
+          rootid,
+          getHistoryOptions(req.query)
+        );
 
         return res.json({
           ok: true,
