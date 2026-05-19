@@ -136,6 +136,12 @@ function normalizeSchemaPayload(payload) {
   const out = {};
 
   for (const [fieldName, fieldConfig] of Object.entries(payload)) {
+    // Meta keys (e.g. _description) are passed through without validation
+    if (fieldName.startsWith("_")) {
+      out[fieldName] = fieldConfig;
+      continue;
+    }
+
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(fieldName)) {
       const err = new Error(`Invalid schema field name: ${fieldName}`);
       err.code = "INVALID_SCHEMA_FIELD_NAME";

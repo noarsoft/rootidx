@@ -41,6 +41,10 @@ er.txt
 concat.js
 create_proj.js
 
+# Playwright / testing artifacts
+.playwright-mcp/
+*.png
+
 # Docker / local volumes if any
 .pgdata/
 data/
