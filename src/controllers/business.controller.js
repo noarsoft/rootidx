@@ -34,6 +34,9 @@ function createBusinessController(db) {
       try {
         const { id } = req.params;
         const result = await service.getBusinessById(id);
+        if (!result) {
+          return res.status(404).json({ ok: false, error: "Business not found" });
+        }
         return res.json({ ok: true, data: result });
       } catch (err) {
         return next(err);

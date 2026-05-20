@@ -7,6 +7,21 @@ const BaseVersionedRepository = require("../repositories/base-versioned.reposito
 const SchemaService = require("./schema.service");
 const FormService = require("./form.service");
 
+async function withTransaction(pool, fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 class DataService {
   constructor(db) {
     this.db = db;
@@ -271,9 +286,15 @@ class DataService {
       throw err;
     }
 
-    const newVersion = await this.repo.updateByRootId(rootid, {
-      data_schema_id: Number(mapped.latestSchema.id),
-      payload: mapped.payload,
+    const newVersion = await withTransaction(this.db, async (client) => {
+      const txRepo = new BaseVersionedRepository(client, "data");
+
+      await txRepo.updateByRootId(rootid, {}, { flag: "u" });
+
+      return txRepo.updateByRootId(rootid, {
+        data_schema_id: Number(mapped.latestSchema.id),
+        payload: mapped.payload,
+      });
     });
 
     return {

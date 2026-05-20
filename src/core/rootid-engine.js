@@ -48,8 +48,8 @@ const SYSTEM_FIELDS = new Set([
 ]);
 
 const FLAG_NORMAL = "";
-const FLAG_UPDATED = "u";
 const FLAG_DELETED = "d";
+const FLAG_UPDATED = "u";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -565,8 +565,8 @@ async function getLatestSchemaFromSchemaId(db, dataSchemaId, options = {}) {
 
 module.exports = {
   FLAG_NORMAL,
-  FLAG_UPDATED,
   FLAG_DELETED,
+  FLAG_UPDATED,
 
   SYSTEM_FIELDS,
   ALLOWED_TABLES,
