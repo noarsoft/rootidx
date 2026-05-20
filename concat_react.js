@@ -12,7 +12,17 @@ const path = require("path");
 // ];
 
 const list_folder = [
-  "src/forms",
+  "src",
+  "src/config",
+  "src/components",
+  "src/components/controls",
+  "src/components/formbuilder",
+  "src/components/schema",
+  "src/components/crud",
+  "src/forms/business",
+  "src/forms/schema",
+  // "src/components/controls_doc",
+  "src/components/controls_doc/pages",
   "src/lib",
 ];
 
