@@ -33,9 +33,9 @@ class BusinessService {
     return this.repo.listLatest(options);
   }
 
-  async getHistory(rootid, options = {}) {
-  return this.repo.getHistory(rootid, options);
-}
+  async getHistory(rootid) {
+    return this.repo.getHistory(rootid);
+  }
 
   async deleteBusiness(rootid) {
     return this.repo.softDeleteByRootId(rootid);

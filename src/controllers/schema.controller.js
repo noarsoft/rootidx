@@ -1,11 +1,6 @@
 // src/controllers/schema.controller.js
 
 const SchemaService = require("../services/schema.service");
-const {
-  getListOptions,
-  getHistoryOptions,
-  normalizeBool,
-} = require("../utils/query-options");
 
 function createSchemaController(db) {
   const schemaService = new SchemaService(db);
@@ -57,9 +52,10 @@ function createSchemaController(db) {
     async getLatestByRootId(req, res, next) {
       try {
         const { rootid } = req.params;
+        const includeDeleted = req.query.includeDeleted === "true";
 
         const result = await schemaService.getLatestSchemaByRootId(rootid, {
-          includeDeleted: normalizeBool(req.query.includeDeleted),
+          includeDeleted,
         });
 
         return res.json({
@@ -74,7 +70,9 @@ function createSchemaController(db) {
     async listLatest(req, res, next) {
       try {
         const result = await schemaService.listLatestSchemas({
-          ...getListOptions(req.query),
+          includeDeleted: req.query.includeDeleted === "true",
+          limit: req.query.limit,
+          offset: req.query.offset,
           business_id: req.query.business_id,
         });
 
@@ -91,10 +89,7 @@ function createSchemaController(db) {
       try {
         const { rootid } = req.params;
 
-        const result = await schemaService.getSchemaHistory(
-          rootid,
-          getHistoryOptions(req.query)
-        );
+        const result = await schemaService.getSchemaHistory(rootid);
 
         return res.json({
           ok: true,

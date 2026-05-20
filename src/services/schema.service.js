@@ -5,9 +5,9 @@
 // ดูแล:
 // - data_schema CRUD แบบ versioned object
 // - validate data.payload against data_schema.payload
-// - compare schema version กับ current/latest schema
-// - compare data row กับ current/latest schema
-// - map/migrate payload ไป current/latest schema
+// - compare schema version กับ latest schema
+// - compare data row กับ latest schema
+// - map/migrate payload ไป latest schema
 //
 // data_schema.payload format:
 //
@@ -54,6 +54,7 @@ const WARNING_TEXT = {
 };
 
 const ALLOWED_FIELD_TYPES = new Set([
+  // storage types
   "string",
   "number",
   "integer",
@@ -61,6 +62,7 @@ const ALLOWED_FIELD_TYPES = new Set([
   "date",
   "datetime",
 
+  // compact date/time formats
   "yyyymmddhhmmss",
   "yyyymmdd",
   "hhmmss",
@@ -69,6 +71,7 @@ const ALLOWED_FIELD_TYPES = new Set([
   "array",
   "json",
 
+  // control types (used by frontend as UI hints)
   "select",
   "dropdown",
   "toggle",
@@ -296,6 +299,7 @@ function isValueTypeValid(value, type) {
     case "json":
       return true;
 
+    // control types that store string values
     case "password":
     case "email":
     case "searchbox":
@@ -313,22 +317,27 @@ function isValueTypeValid(value, type) {
     case "calendargrid":
       return typeof value === "string";
 
+    // control types that store number values
     case "slider":
     case "rating":
     case "progress":
       return typeof value === "number" && Number.isFinite(value);
 
+    // control types that store boolean values
     case "toggle":
       return typeof value === "boolean";
 
+    // control types that store string (selected option)
     case "select":
     case "dropdown":
     case "buttongroup":
       return typeof value === "string" || typeof value === "number";
 
+    // control types that store boolean values
     case "checkbox":
       return typeof value === "boolean";
 
+    // layout/composite controls — accept any JSON
     case "pagebreak":
     case "accordion":
     case "tabs":
@@ -548,10 +557,9 @@ function validatePayloadAgainstSchema(payload, schemaPayload, options = {}) {
     }
 
     if (Array.isArray(fieldConfig.enum) && value != null) {
-      const enumMatch = fieldConfig.enum.some((e) =>
-        e === value || (e && typeof e === "object" && e.value === value)
+      const enumMatch = fieldConfig.enum.some(e =>
+        e === value || (e && typeof e === 'object' && e.value === value)
       );
-
       if (!enumMatch) {
         errors.push({
           code: "INVALID_ENUM_VALUE",
@@ -653,48 +661,46 @@ class SchemaService {
     this.db = db;
     this.repo = new BaseVersionedRepository(db, "data_schema");
     this.dataRepo = new BaseVersionedRepository(db, "data");
-    this.formRepo = new BaseVersionedRepository(db, "form");
-    this.viewRepo = new BaseVersionedRepository(db, "tableview");
-  }
-
-    /**
-   * Deprecated / blocked by design.
-   *
-   * ห้าม mark data/form/tableview เป็น _flag='u' จาก schema service โดยตรง
-   * เพราะจะทำให้ object เหล่านั้นไม่มี current/latest row (_flag='')
-   *
-   * หลักที่ถูกต้อง:
-   * - data/form/tableview เดิมยังเป็น current ของตัวเองได้
-   * - ถ้าต้องการ migrate ให้ใช้ migrateDataToLatestSchema,
-   *   migrateFormToLatestSchema, migrateViewToLatestSchema
-   * - การเปลี่ยน _flag ต้องผ่าน rootid engine/repository เท่านั้น
-   */
-  async markLatestBySchemaIdAsUpdated(tableName, dataSchemaId) {
-    const err = new Error(
-      "Directly marking latest rows as updated is not allowed. Use versioned migration/update methods instead."
-    );
-
-    err.code = "INVALID_REPOSITORY_METHOD";
-    err.details = {
-      table: tableName,
-      data_schema_id: dataSchemaId,
-      reason:
-        "Marking rows as _flag='u' without inserting a replacement current row will break latest/current lookup.",
-    };
-
-    throw err;
   }
 
   async markLatestDataBySchemaIdAsUpdated(dataSchemaId) {
-    return this.markLatestBySchemaIdAsUpdated("data", dataSchemaId);
-  }
+    if (!dataSchemaId) {
+      return {
+        matched: 0,
+        marked: 0,
+      };
+    }
 
-  async markLatestFormsBySchemaIdAsUpdated(dataSchemaId) {
-    return this.markLatestBySchemaIdAsUpdated("form", dataSchemaId);
-  }
+    const rows = await this.db.query(
+      `
+        WITH latest AS (
+          SELECT DISTINCT ON (_rootid) *
+          FROM data
+          WHERE data_schema_id = $1
+          ORDER BY _rootid, _doc_version DESC, id DESC
+        )
+        SELECT _rootid, _flag
+        FROM latest
+        WHERE _flag <> 'd'
+      `,
+      [Number(dataSchemaId)]
+    );
 
-  async markLatestViewsBySchemaIdAsUpdated(dataSchemaId) {
-    return this.markLatestBySchemaIdAsUpdated("tableview", dataSchemaId);
+    let marked = 0;
+
+    for (const row of rows.rows || []) {
+      if (row._flag === "u") {
+        continue;
+      }
+
+      await this.dataRepo.updateByRootId(row._rootid, {}, { flag: "u" });
+      marked += 1;
+    }
+
+    return {
+      matched: rows.rowCount || 0,
+      marked,
+    };
   }
 
   async createSchema(input = {}) {
@@ -709,6 +715,7 @@ class SchemaService {
     const payload = normalizeSchemaPayload(input.payload || {});
 
     return this.repo.create({
+      rootid: input.rootid,
       name,
       payload,
       business_id: input.business_id ? Number(input.business_id) : null,
@@ -788,8 +795,8 @@ class SchemaService {
     return this.repo.listLatest(listOptions);
   }
 
-  async getSchemaHistory(rootid, options = {}) {
-    return this.repo.getHistory(rootid, options);
+  async getSchemaHistory(rootid) {
+    return this.repo.getHistory(rootid);
   }
 
   async deleteSchema(rootid) {

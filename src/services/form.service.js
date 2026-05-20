@@ -213,6 +213,7 @@ class FormService {
     }
 
     return this.repo.create({
+      rootid: input.rootid,
       data_schema_id: input.data_schema_id ? Number(input.data_schema_id) : null,
       data_schema_rootid: input.data_schema_rootid || null,
       payload: input.payload || {},
@@ -223,9 +224,7 @@ class FormService {
     const latest = await this.repo.getLatestOrThrow(rootid);
 
     const dataSchemaId =
-      input.data_schema_id !== undefined
-        ? input.data_schema_id
-        : latest.data_schema_id;
+      input.data_schema_id !== undefined ? input.data_schema_id : latest.data_schema_id;
 
     const dataSchemaRootId =
       input.data_schema_rootid !== undefined
@@ -277,27 +276,13 @@ class FormService {
     return form;
   }
 
-  async getLatestFormBySchemaRootId(schemaRootId, options = {}) {
-    const forms = await this.listLatestFormsBySchemaRootId(schemaRootId, {
-      ...options,
-      includeDeleted: false,
-      limit: 1,
-      offset: 0,
-    });
-
-    return forms[0] || null;
-  }
-
   async listLatestForms(options = {}) {
     if (options.data_schema_id) {
       return this.listLatestFormsBySchemaId(options.data_schema_id, options);
     }
 
     if (options.data_schema_rootid) {
-      return this.listLatestFormsBySchemaRootId(
-        options.data_schema_rootid,
-        options
-      );
+      return this.listLatestFormsBySchemaRootId(options.data_schema_rootid, options);
     }
 
     return this.repo.listLatest(options);
@@ -308,7 +293,7 @@ class FormService {
   }
 
   async listLatestFormsBySchemaRootId(schemaRootId, options = {}) {
-    return this.repo.listLatestInSchemaFamily(schemaRootId, options);
+    return this.repo.listLatestBySchemaRootId(schemaRootId, options);
   }
 
   async getFormEditorContext(id) {
@@ -397,8 +382,8 @@ class FormService {
     };
   }
 
-  async getFormHistory(rootid, options = {}) {
-    return this.repo.getHistory(rootid, options);
+  async getFormHistory(rootid) {
+    return this.repo.getHistory(rootid);
   }
 
   async deleteForm(rootid) {

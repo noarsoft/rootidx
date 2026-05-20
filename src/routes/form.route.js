@@ -13,7 +13,6 @@ function createFormRoute(db) {
 
   // list by schema
   router.get("/schema/:schemaId", controller.listBySchemaId);
-  router.get("/schema-root/:schemaRootId/latest", controller.getLatestBySchemaRootId);
   router.get("/schema-root/:schemaRootId", controller.listBySchemaRootId);
 
   // rootid operations
